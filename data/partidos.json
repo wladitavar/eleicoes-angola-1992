@@ -1,0 +1,16 @@
+[
+  { "id_partido": 1,  "sigla": "MPLA",    "nome_completo": "Movimento Popular de Libertação de Angola" },
+  { "id_partido": 2,  "sigla": "UNITA",   "nome_completo": "União Nacional para a Independência Total de Angola" },
+  { "id_partido": 3,  "sigla": "PDA",     "nome_completo": "Partido Democrático de Angola" },
+  { "id_partido": 4,  "sigla": "FNLA",    "nome_completo": "Frente Nacional de Libertação de Angola" },
+  { "id_partido": 5,  "sigla": "PLD",     "nome_completo": "Partido Liberal Democrático" },
+  { "id_partido": 6,  "sigla": "PRD",     "nome_completo": "Partido Renovador Democrático" },
+  { "id_partido": 7,  "sigla": "PSD",     "nome_completo": "Partido Social Democrata" },
+  { "id_partido": 8,  "sigla": "FD",      "nome_completo": "Frente Democrática" },
+  { "id_partido": 9,  "sigla": "PNDA",    "nome_completo": "Partido Nacional Democrático Angolano" },
+  { "id_partido": 10, "sigla": "PRA",     "nome_completo": "Partido Reformador Angolano" },
+  { "id_partido": 11, "sigla": "PRS",     "nome_completo": "Partido Renovador Socialista" },
+  { "id_partido": 12, "sigla": "AAD-COA", "nome_completo": "Coligação – Aliança Democrática" },
+  { "id_partido": 13, "sigla": "PAJOCA",  "nome_completo": "Partido da Aliança dos Jovens, Operários e Camponeses de Angola" },
+  { "id_partido": 14, "sigla": "PDP-ANA", "nome_completo": "Partido Democrático Pelo Progresso / Aliança Nacional Angolana" }
+]

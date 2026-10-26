@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Angola 1992 — Eleições Gerais</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" />
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Angola — Eleições Gerais de 1992</h1>
+  <p>29 e 30 de setembro de 1992 · Primeiras eleições multipartidárias</p>
+</header>
+
+<nav>
+  <a href="#contexto">Contexto</a>
+  <a href="#timeline">Cronologia</a>
+  <a href="#presidenciais">Presidenciais</a>
+  <a href="#parlamentares">Parlamentares</a>
+  <a href="#graficos">Gráficos</a>
+</nav>
+
+<main>
+  <div id="loader" class="loader">A carregar dados…</div>
+  <div id="erro" class="erro" hidden></div>
+
+  <div id="conteudo" hidden>
+    <section id="contexto">
+      <h2>Contexto e Participação</h2>
+      <div class="kpis">
+        <div class="kpi"><div class="valor" id="kpi-inscritos">—</div><div class="rotulo">Eleitores inscritos</div></div>
+        <div class="kpi"><div class="valor" id="kpi-votantes">—</div><div class="rotulo">Votantes</div></div>
+        <div class="kpi"><div class="valor" id="kpi-participacao">—</div><div class="rotulo">Taxa de participação</div></div>
+        <div class="kpi"><div class="valor">2</div><div class="rotulo">Dias de votação</div></div>
+      </div>
+    </section>
+
+    <section id="timeline">
+      <h2>Cronologia dos Acontecimentos</h2>
+      <div class="timeline" id="timeline-container"></div>
+    </section>
+
+    <section id="presidenciais">
+      <h2>Eleição Presidencial (1.ª Volta) — 1992</h2>
+      <div id="filtros-presidenciais" class="filtros"></div>
+      <table id="tabela-presidenciais" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>#</th><th>Candidato</th><th>Sigla</th>
+            <th>Nome Completo do Partido</th><th>Votos</th><th>Percentagem (%)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="parlamentares">
+      <h2>Eleição Parlamentar — Assembleia Nacional</h2>
+      <table id="tabela-parlamentares" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>Sigla</th><th>Nome Completo do Partido</th>
+            <th>Votos</th><th>Percentagem (%)</th><th>Assentos</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="graficos">
+      <h2>Visualização Gráfica</h2>
+      <div class="graficos">
+        <div class="grafico-box"><canvas id="grafico-assentos"></canvas></div>
+        <div class="grafico-box"><canvas id="grafico-presidenciais"></canvas></div>
+      </div>
+    </section>
+
+    <div class="nota">
+      <strong>Nota metodológica:</strong> Os dados de votos para a maioria dos candidatos presidenciais
+      e de vários partidos nas eleições parlamentares <em>não foram divulgados oficialmente</em> ou não
+      estão disponíveis nos arquivos públicos consultados, sendo apresentada apenas a percentagem.
+      Os valores ausentes são indicados como «—». Fonte: resultados oficiais da Comissão Nacional
+      Eleitoral de Angola (1992) e compilações académicas.
+    </div>
+  </div>
+</main>
+
+<footer>Página demonstrativa · Dados históricos das eleições gerais de Angola de 1992</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

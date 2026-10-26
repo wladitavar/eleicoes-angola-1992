@@ -1,0 +1,10 @@
+{
+  "id_eleicao": "1992_GERAL",
+  "ano": 1992,
+  "data_inicio": "1992-09-29",
+  "data_fim": "1992-09-30",
+  "tipo": "Geral (Presidencial + Legislativa)",
+  "eleitores_inscritos": 4828468,
+  "votantes": 4410575,
+  "taxa_participacao": 91.34
+}
