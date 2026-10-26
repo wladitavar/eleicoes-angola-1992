@@ -1,8 +1,4 @@
 -- Migração SQLite → PostgreSQL
--- Uso:
---   1) sqlite3 eleicoes.db .dump > dump.sql
---   2) Ajustar AUTOINCREMENT → SERIAL
---   3) psql -U postgres -f migrate-postgres.sql
 
 CREATE TABLE IF NOT EXISTS eleicoes (
   id_eleicao          VARCHAR(20)   PRIMARY KEY,
