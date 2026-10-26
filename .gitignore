@@ -1,45 +1,26 @@
-@'
-# Dependências
-node_modules/
+﻿node_modules/
 npm-debug.log*
-
-# Ambiente
 .env
 .env.*
 !.env.example
-
-# Base de dados
 eleicoes.db
 *.sqlite
 *.sqlite3
-
-# Testes / cobertura
 coverage/
 .pytest_cache/
 .mypy_cache/
-
-# Build / snapshots
 dist/
 snapshots/
-
-# Sistema
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Logs
 *.log
-
-# Python
 __pycache__/
 *.pyc
 *.pyo
 .venv/
 venv/
-'@ | Out-File -FilePath .gitignore -Encoding utf8
