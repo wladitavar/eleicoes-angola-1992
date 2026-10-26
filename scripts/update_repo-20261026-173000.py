@@ -2,16 +2,16 @@
 """
 update_repo-20261026-173000.py — Gestão completa do repositório Git + versão final.
 
-Esta versão substitui scripts/update_repo.py e inclui:
-  • FICHEIROS_VERSAO_ATUAL  (base — .gitignore, .gitattributes, etc.)
-  • FICHEIROS_VERSAO_FINAL  (embutido — API Express, Docker, testes, SQL)
-  • _conteudo_generate_snapshot() corrigido (string numa única linha)
-  • Modos: --dry-run, --files-only, --fix-now, --auto, interativo
+Correções face à versão anterior:
+  • _conteudo_generate_snapshot() REMOVIDA (não reescreve generate_snapshot.py).
+  • generate_snapshot.py mantido manualmente (já está válido no repositório).
+  • Evita a regressão que quebrava o snapshot no passo 3.
+  • FICHEIROS_VERSAO_FINAL embutido (autónomo, sem dependência externa).
 
 Uso:
   python scripts/update_repo-20261026-173000.py --dry-run
-  python scripts/update_repo-20261026-173000.py --fix-now "feat: versão final"
-  python scripts/update_repo-20261026-173000.py --auto "feat: versão final"
+  python scripts/update_repo-20261026-173000.py --fix-now "feat: ..."
+  python scripts/update_repo-20261026-173000.py --auto "feat: ..."
 """
 
 import argparse
@@ -190,7 +190,6 @@ eleicoes.db
 # ======================================================================
 FICHEIROS_VERSAO_FINAL = {
 
-    # -------------------- server.js --------------------
     "server.js": '''/**
  * server.js — API REST + frontend estático.
  * Segurança: helmet, compression, CORS restrito, rate limiting.
@@ -349,7 +348,6 @@ if (require.main === module) iniciar();
 module.exports = { app, iniciar };
 ''',
 
-    # -------------------- db.js --------------------
     "db.js": '''/**
  * db.js — Abstração de fonte de dados.
  * Usa SQLite se disponível; caso contrário, lê JSON de public/data/.
@@ -433,7 +431,6 @@ module.exports = {
 };
 ''',
 
-    # -------------------- Dockerfile --------------------
     "Dockerfile": '''FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
@@ -463,7 +460,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
 CMD ["node", "server.js"]
 ''',
 
-    # -------------------- docker-compose.yml --------------------
     "docker-compose.yml": '''version: "3.9"
 
 services:
@@ -511,7 +507,6 @@ networks:
     driver: bridge
 ''',
 
-    # -------------------- nginx/nginx.conf --------------------
     "nginx/nginx.conf": '''server {
     listen 80;
     server_name _;
@@ -553,7 +548,6 @@ networks:
 }
 ''',
 
-    # -------------------- jest.config.js --------------------
     "jest.config.js": '''module.exports = {
   testEnvironment: "node",
   testMatch: ["**/tests/**/*.test.js"],
@@ -565,7 +559,6 @@ networks:
 };
 ''',
 
-    # -------------------- tests/helpers.js --------------------
     "tests/helpers.js": '''/**
  * tests/helpers.js — utilitários partilhados.
  */
@@ -581,7 +574,6 @@ function lerJSON(nome) {
 module.exports = { lerJSON, DATA_DIR };
 ''',
 
-    # -------------------- tests/api.test.js --------------------
     "tests/api.test.js": '''/**
  * tests/api.test.js — Testes de integração com supertest + jest.
  */
@@ -684,7 +676,6 @@ describe("API — Eleições Angola 1992", () => {
 });
 ''',
 
-    # -------------------- database/schema.sql --------------------
     "database/schema.sql": '''-- Esquema SQLite/PostgreSQL — Eleições Angola 1992
 
 CREATE TABLE IF NOT EXISTS eleicoes (
@@ -737,7 +728,6 @@ CREATE INDEX IF NOT EXISTS idx_parl_partido   ON resultados_parlamentares(id_par
 CREATE INDEX IF NOT EXISTS idx_timeline_data  ON timeline(data);
 ''',
 
-    # -------------------- database/seed.sql --------------------
     "database/seed.sql": '''-- Seed — Dados das Eleições Gerais de Angola (1992)
 
 BEGIN;
@@ -807,12 +797,7 @@ INSERT OR REPLACE INTO timeline (id, data, titulo, descricao) VALUES
 COMMIT;
 ''',
 
-    # -------------------- database/migrate-postgres.sql --------------------
     "database/migrate-postgres.sql": '''-- Migração SQLite → PostgreSQL
--- Uso:
---   1) sqlite3 eleicoes.db .dump > dump.sql
---   2) Ajustar AUTOINCREMENT → SERIAL
---   3) psql -U postgres -f migrate-postgres.sql
 
 CREATE TABLE IF NOT EXISTS eleicoes (
   id_eleicao          VARCHAR(20)   PRIMARY KEY,
@@ -907,7 +892,7 @@ def escrever_todos_ficheiros(dry_run: bool) -> dict:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = None if dry_run else (BACKUP_DIR / timestamp)
 
-    print(C.bold("\n═══ 0. ESCRITA DOS FICHEIROS DA VERSÃO ATUAL + FINAL ═══"))
+    print(C.bold("\n═══ 0. ESCRITA DOS FICHEIROS (versão atual + final) ═══"))
     if dry_run:
         print(C.aviso("  [dry-run] Nenhum ficheiro será escrito."))
     else:
@@ -1279,7 +1264,7 @@ def main():
     args = ap.parse_args()
 
     print(C.bold("\n╔══════════════════════════════════════════════╗"))
-    print(C.bold("║   UPDATE REPO — VERSÃO FINAL                ║"))
+    print(C.bold("║   UPDATE REPO — VERSÃO FINAL (sem regeneração) ║"))
     print(C.bold("╚══════════════════════════════════════════════╝"))
 
     if args.files_only:

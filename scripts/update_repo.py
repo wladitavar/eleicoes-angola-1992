@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 """
-update_repo.py — Gestão completa do repositório Git + geração de ficheiros.
+update_repo-20261026-173000.py — Gestão completa do repositório Git + versão final.
 
-Faz, de uma vez:
-  0. Escreve/atualiza TODOS os ficheiros da versão atual do projeto
-     (backup automático em .backup/<timestamp>/ antes de substituir).
-  1. Mostra estado do repositório (branch, tags, alterações).
-  2. Valida ficheiros críticos (.gitignore, .gitattributes, scripts).
-  3. Gera snapshot (ZIP + MD + JSON + SHA-256).
-  4. Adiciona alterações e faz commit convencional.
-  5. Cria tag anotada com semver automático.
-  6. (Opcional) Push para o remoto.
+Correções face à versão anterior:
+  • _conteudo_generate_snapshot() REMOVIDA (não reescreve generate_snapshot.py).
+  • generate_snapshot.py mantido manualmente (já está válido no repositório).
+  • Evita a regressão que quebrava o snapshot no passo 3.
+  • FICHEIROS_VERSAO_FINAL embutido (autónomo, sem dependência externa).
 
 Uso:
-  python scripts/update_repo.py                    # ciclo interativo completo
-  python scripts/update_repo.py --auto "feat: X"   # commit automático
-  python scripts/update_repo.py --dry-run          # só mostra o que faria
-  python scripts/update_repo.py --files-only       # só escreve ficheiros
-  python scripts/update_repo.py --fix-now "fix: X" # escreve + valida + commita
-  python scripts/update_repo.py --no-files         # salta escrita de ficheiros
-  python scripts/update_repo.py --no-snapshot      # sem snapshot
-  python scripts/update_repo.py --no-push --no-tag # sem push nem tag
+  python scripts/update_repo-20261026-173000.py --dry-run
+  python scripts/update_repo-20261026-173000.py --fix-now "feat: ..."
+  python scripts/update_repo-20261026-173000.py --auto "feat: ..."
 """
 
 import argparse
@@ -72,10 +63,7 @@ class C:
     def bold(t):  return f"{C.BOLD}{t}{C.FIM}"
 
 # ======================================================================
-# CONTEÚDO DOS FICHEIROS DA VERSÃO ATUAL
-# ----------------------------------------------------------------------
-# Cada chave é o caminho relativo à raiz do projeto.
-# O valor é uma string com o conteúdo completo.
+# FICHEIROS DA VERSÃO ATUAL (base)
 # ======================================================================
 FICHEIROS_VERSAO_ATUAL = {
     ".gitattributes": """* text=auto eol=lf
@@ -111,6 +99,10 @@ coverage/
 dist/
 snapshots/
 .backup/
+
+# Scripts temporários
+scripts/fix*.ps1
+scripts/fix*.sh
 
 # Sistema
 .DS_Store
@@ -162,37 +154,717 @@ eleicoes.db
 
     "package.json": """{
   "name": "eleicoes-angola-1992",
-  "version": "0.1.0",
-  "description": "Frontend estático — versão inicial das eleições de Angola de 1992",
-  "private": true,
-  "license": "MIT"
+  "version": "0.2.0",
+  "description": "API REST + frontend estático para as eleições de Angola de 1992",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "jest --runInBand",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
 """,
-
-    # Os scripts são escritos pelo próprio script (para evitar duplicação):
-    # scripts/generate_snapshot.py, scripts/update_repo.py — ver secção 3.
 }
 
 # ======================================================================
-# Helpers de escrita de ficheiros
+# FICHEIROS DA VERSÃO FINAL (embutido)
 # ======================================================================
-def sha256_bytes(dados: bytes) -> str:
-    return hashlib.sha256(dados).hexdigest()
+FICHEIROS_VERSAO_FINAL = {
 
+    "server.js": '''/**
+ * server.js — API REST + frontend estático.
+ * Segurança: helmet, compression, CORS restrito, rate limiting.
+ */
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const helmet = require("helmet");
+const compression = require("compression");
+const rateLimit = require("express-rate-limit");
+const path = require("path");
+const db = require("./db");
 
-def sha256_ficheiro(caminho: Path) -> str:
-    h = hashlib.sha256()
-    with caminho.open("rb") as f:
-        for bloco in iter(lambda: f.read(65536), b""):
-            h.update(bloco)
-    return h.hexdigest()
+const app = express();
+const PORT = process.env.PORT || 8000;
+const NODE_ENV = process.env.NODE_ENV || "development";
 
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://code.jquery.com", "https://cdn.datatables.net", "https://cdn.jsdelivr.net"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.datatables.net"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "https://cdn.datatables.net"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
+app.use(compression({ level: 6, threshold: 1024 }));
+
+const ORIGENS = (process.env.CORS_ORIGINS || "http://localhost:8000")
+  .split(",").map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (NODE_ENV !== "production" || ORIGENS.includes(origin)) return cb(null, true);
+    cb(new Error(`Origem não permitida: ${origin}`));
+  },
+  methods: ["GET", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Accept"],
+  maxAge: 86400,
+}));
+
+const limiterGlobal = rateLimit({
+  windowMs: 60 * 1000, max: 100,
+  standardHeaders: "draft-7", legacyHeaders: false,
+  message: { erro: "Demasiados pedidos. Tente novamente em 1 minuto." },
+});
+app.use("/api/", limiterGlobal);
+
+const limiterPesado = rateLimit({
+  windowMs: 60 * 1000, max: 30,
+  standardHeaders: "draft-7", legacyHeaders: false,
+  message: { erro: "Limite de pedidos agregados atingido." },
+});
+
+app.use(morgan(NODE_ENV === "production" ? "combined" : "dev"));
+app.use(express.json({ limit: "100kb" }));
+
+const ANO_PARA_ID = { "1992": "1992_GERAL" };
+const resolverId = ano => ANO_PARA_ID[String(ano)] || null;
+
+function validarEleicao(req, res, next) {
+  const id = resolverId(req.params.ano);
+  if (!id) {
+    return res.status(404).json({
+      erro: "Eleição não encontrada",
+      ano: req.params.ano,
+      disponiveis: Object.keys(ANO_PARA_ID),
+    });
+  }
+  req.idEleicao = id;
+  next();
+}
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    fonte: db.usandoSQLite ? "sqlite" : "json",
+    ambiente: NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/api/eleicoes/:ano", validarEleicao, (req, res) => {
+  const e = db.getEleicao(req.idEleicao);
+  if (!e) return res.status(404).json({ erro: "Sem dados para esta eleição" });
+  res.json(e);
+});
+
+app.get("/api/eleicoes/:ano/partidos", validarEleicao, (req, res) => {
+  res.json(db.getPartidos());
+});
+
+app.get("/api/eleicoes/:ano/presidenciais", validarEleicao, (req, res) => {
+  res.json(db.getCandidatos(req.idEleicao));
+});
+
+app.get("/api/eleicoes/:ano/parlamentares", validarEleicao, (req, res) => {
+  res.json(db.getResultadosParlamentares(req.idEleicao));
+});
+
+app.get("/api/eleicoes/:ano/timeline", validarEleicao, (req, res) => {
+  res.json(db.getTimeline());
+});
+
+app.get("/api/eleicoes/:ano/tudo", limiterPesado, validarEleicao, (req, res) => {
+  res.json(db.getTudo(req.idEleicao));
+});
+
+app.use(express.static(path.join(__dirname, "public"), {
+  maxAge: NODE_ENV === "production" ? "1h" : 0,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith("sw.js")) {
+      res.setHeader("Service-Worker-Allowed", "/");
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  },
+}));
+
+app.get("*", (req, res) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ erro: "Endpoint não encontrado" });
+  }
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.use((err, req, res, next) => {
+  console.error(`[erro] ${req.method} ${req.path}:`, err.message);
+  const status = err.status || 500;
+  res.status(status).json({
+    erro: NODE_ENV === "production" && status === 500
+      ? "Erro interno do servidor"
+      : err.message,
+  });
+});
+
+function iniciar() {
+  return app.listen(PORT, () => {
+    console.log(`\\n✅ Servidor em http://localhost:${PORT} (${NODE_ENV})`);
+    console.log(`   API:    http://localhost:${PORT}/api/eleicoes/1992/tudo`);
+    console.log(`   Health: http://localhost:${PORT}/api/health`);
+    console.log(`   Fonte:  ${db.usandoSQLite ? "SQLite" : "JSON"}\\n`);
+  });
+}
+
+if (require.main === module) iniciar();
+
+module.exports = { app, iniciar };
+''',
+
+    "db.js": '''/**
+ * db.js — Abstração de fonte de dados.
+ * Usa SQLite se disponível; caso contrário, lê JSON de public/data/.
+ */
+const path = require("path");
+const fs = require("fs");
+
+const DATA_DIR = path.join(__dirname, "public", "data");
+const SQLITE_PATH = path.join(__dirname, "eleicoes.db");
+
+let sqlite = null;
+let usandoSQLite = false;
+
+try {
+  if (fs.existsSync(SQLITE_PATH)) {
+    const Database = require("better-sqlite3");
+    sqlite = new Database(SQLITE_PATH, { readonly: true });
+    usandoSQLite = true;
+    console.log(`[db] SQLite ligado: ${SQLITE_PATH}`);
+  } else {
+    console.log("[db] eleicoes.db não encontrado — a usar JSON.");
+  }
+} catch (e) {
+  console.log(`[db] better-sqlite3 indisponível (${e.message}) — a usar JSON.`);
+}
+
+function lerJSON(nome) {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, nome), "utf-8"));
+}
+
+function getEleicao(id = "1992_GERAL") {
+  if (usandoSQLite) {
+    return sqlite.prepare("SELECT * FROM eleicoes WHERE id_eleicao = ?").get(id) || null;
+  }
+  const e = lerJSON("eleicao.json");
+  return e.id_eleicao === id ? e : null;
+}
+
+function getPartidos() {
+  if (usandoSQLite) {
+    return sqlite.prepare("SELECT * FROM partidos ORDER BY id_partido").all();
+  }
+  return lerJSON("partidos.json");
+}
+
+function getCandidatos(idEleicao = "1992_GERAL") {
+  if (usandoSQLite) {
+    return sqlite.prepare("SELECT * FROM candidatos_presidenciais WHERE id_eleicao = ? ORDER BY posicao").all(idEleicao);
+  }
+  return lerJSON("candidatos_presidenciais.json");
+}
+
+function getResultadosParlamentares(idEleicao = "1992_GERAL") {
+  if (usandoSQLite) {
+    return sqlite.prepare("SELECT * FROM resultados_parlamentares WHERE id_eleicao = ? ORDER BY assentos DESC").all(idEleicao);
+  }
+  return lerJSON("resultados_parlamentares.json");
+}
+
+function getTimeline() {
+  if (usandoSQLite) {
+    return sqlite.prepare("SELECT * FROM timeline ORDER BY data").all();
+  }
+  return lerJSON("timeline.json");
+}
+
+function getTudo(id = "1992_GERAL") {
+  return {
+    eleicao: getEleicao(id),
+    partidos: getPartidos(),
+    candidatos: getCandidatos(id),
+    parlamentar: getResultadosParlamentares(id),
+    timeline: getTimeline(),
+  };
+}
+
+module.exports = {
+  getEleicao, getPartidos, getCandidatos,
+  getResultadosParlamentares, getTimeline, getTudo,
+  usandoSQLite,
+};
+''',
+
+    "Dockerfile": '''FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+
+RUN addgroup -S app && adduser -S app -G app
+
+ENV NODE_ENV=production PORT=8000
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+COPY server.js db.js ./
+COPY public ./public
+COPY database ./database
+
+RUN chown -R app:app /app
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+  CMD wget -qO- http://localhost:8000/api/health || exit 1
+
+CMD ["node", "server.js"]
+''',
+
+    "docker-compose.yml": '''version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: angola92-api:0.2.0
+    container_name: angola92-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      CORS_ORIGINS: "http://localhost:8080,http://localhost:8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./eleicoes.db:/app/eleicoes.db:ro
+      - ./public/data:/app/public/data:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - angola92-net
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: angola92-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - angola92-net
+
+networks:
+  angola92-net:
+    driver: bridge
+''',
+
+    "nginx/nginx.conf": '''server {
+    listen 80;
+    server_name _;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript
+               application/xml text/xml image/svg+xml;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location /api/ {
+        proxy_pass http://app:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
+    location / {
+        proxy_pass http://app:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /sw.js {
+        proxy_pass http://app:8000;
+        add_header Cache-Control "no-cache";
+        add_header Service-Worker-Allowed "/";
+    }
+}
+''',
+
+    "jest.config.js": '''module.exports = {
+  testEnvironment: "node",
+  testMatch: ["**/tests/**/*.test.js"],
+  collectCoverageFrom: ["server.js", "db.js", "!node_modules/**"],
+  coverageDirectory: "coverage",
+  coverageReporters: ["text", "lcov", "html"],
+  verbose: true,
+  testTimeout: 10000,
+};
+''',
+
+    "tests/helpers.js": '''/**
+ * tests/helpers.js — utilitários partilhados.
+ */
+const path = require("path");
+const fs = require("fs");
+
+const DATA_DIR = path.join(__dirname, "..", "public", "data");
+
+function lerJSON(nome) {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, nome), "utf-8"));
+}
+
+module.exports = { lerJSON, DATA_DIR };
+''',
+
+    "tests/api.test.js": '''/**
+ * tests/api.test.js — Testes de integração com supertest + jest.
+ */
+const request = require("supertest");
+const { app } = require("../server");
+
+describe("API — Eleições Angola 1992", () => {
+
+  describe("GET /api/health", () => {
+    it("deve responder 200 com status ok", async () => {
+      const res = await request(app).get("/api/health").expect(200);
+      expect(res.body).toHaveProperty("status", "ok");
+      expect(["json", "sqlite"]).toContain(res.body.fonte);
+    });
+  });
+
+  describe("GET /api/eleicoes/1992", () => {
+    it("deve devolver os metadados da eleição", async () => {
+      const res = await request(app).get("/api/eleicoes/1992").expect(200);
+      expect(res.body.id_eleicao).toBe("1992_GERAL");
+      expect(res.body.ano).toBe(1992);
+      expect(res.body.eleitores_inscritos).toBe(4828468);
+    });
+
+    it("deve devolver 404 para ano inexistente", async () => {
+      const res = await request(app).get("/api/eleicoes/1999").expect(404);
+      expect(res.body).toHaveProperty("erro");
+      expect(res.body.disponiveis).toContain("1992");
+    });
+  });
+
+  describe("GET /api/eleicoes/1992/partidos", () => {
+    it("deve devolver 14 partidos", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/partidos").expect(200);
+      expect(res.body).toHaveLength(14);
+      const siglas = res.body.map(p => p.sigla);
+      expect(siglas).toEqual(expect.arrayContaining(["MPLA", "UNITA", "FNLA"]));
+    });
+  });
+
+  describe("GET /api/eleicoes/1992/presidenciais", () => {
+    it("deve devolver 11 candidatos", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/presidenciais").expect(200);
+      expect(res.body).toHaveLength(11);
+      expect(res.body[0].nome_candidato).toBe("José Eduardo dos Santos");
+    });
+
+    it("soma das percentagens deve ser ≈100%", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/presidenciais").expect(200);
+      const soma = res.body.reduce((s, c) => s + Number(c.percentagem), 0);
+      expect(soma).toBeGreaterThan(99);
+      expect(soma).toBeLessThan(101);
+    });
+  });
+
+  describe("GET /api/eleicoes/1992/parlamentares", () => {
+    it("soma dos assentos deve ser 220", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/parlamentares").expect(200);
+      const soma = res.body.reduce((s, r) => s + r.assentos, 0);
+      expect(soma).toBe(220);
+    });
+
+    it("MPLA deve ter 129 assentos e UNITA 70", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/parlamentares").expect(200);
+      const mpla = res.body.find(r => r.id_partido === 1);
+      const unita = res.body.find(r => r.id_partido === 2);
+      expect(mpla.assentos).toBe(129);
+      expect(unita.assentos).toBe(70);
+    });
+  });
+
+  describe("GET /api/eleicoes/1992/timeline", () => {
+    it("deve devolver 6 eventos", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/timeline").expect(200);
+      expect(res.body).toHaveLength(6);
+    });
+  });
+
+  describe("GET /api/eleicoes/1992/tudo", () => {
+    it("deve devolver payload agregado", async () => {
+      const res = await request(app).get("/api/eleicoes/1992/tudo").expect(200);
+      expect(res.body).toHaveProperty("eleicao");
+      expect(res.body).toHaveProperty("partidos");
+      expect(res.body).toHaveProperty("candidatos");
+      expect(res.body).toHaveProperty("parlamentar");
+      expect(res.body).toHaveProperty("timeline");
+    });
+  });
+
+  describe("Segurança", () => {
+    it("deve devolver cabeçalhos do Helmet", async () => {
+      const res = await request(app).get("/api/health");
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    });
+
+    it("deve devolver 404 em endpoint inexistente da API", async () => {
+      const res = await request(app).get("/api/inexistente").expect(404);
+    });
+  });
+});
+''',
+
+    "database/schema.sql": '''-- Esquema SQLite/PostgreSQL — Eleições Angola 1992
+
+CREATE TABLE IF NOT EXISTS eleicoes (
+  id_eleicao          VARCHAR(20)   PRIMARY KEY,
+  ano                 INTEGER       NOT NULL,
+  data_inicio         DATE          NOT NULL,
+  data_fim            DATE          NOT NULL,
+  tipo                VARCHAR(100)  NOT NULL,
+  eleitores_inscritos INTEGER,
+  votantes            INTEGER,
+  taxa_participacao   NUMERIC(5,2)
+);
+
+CREATE TABLE IF NOT EXISTS partidos (
+  id_partido    INTEGER      PRIMARY KEY,
+  sigla         VARCHAR(20)  NOT NULL UNIQUE,
+  nome_completo VARCHAR(200) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS candidatos_presidenciais (
+  id_candidato   INTEGER      PRIMARY KEY,
+  id_eleicao     VARCHAR(20)  NOT NULL REFERENCES eleicoes(id_eleicao),
+  nome_candidato VARCHAR(150) NOT NULL,
+  id_partido     INTEGER      REFERENCES partidos(id_partido),
+  votos          INTEGER,
+  percentagem    NUMERIC(5,2),
+  posicao        INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS resultados_parlamentares (
+  id_resultado INTEGER     PRIMARY KEY,
+  id_eleicao   VARCHAR(20) NOT NULL REFERENCES eleicoes(id_eleicao),
+  id_partido   INTEGER     NOT NULL REFERENCES partidos(id_partido),
+  votos        INTEGER,
+  percentagem  NUMERIC(5,2),
+  assentos     INTEGER     NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS timeline (
+  id        INTEGER      PRIMARY KEY AUTOINCREMENT,
+  data      DATE         NOT NULL,
+  titulo    VARCHAR(150) NOT NULL,
+  descricao TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_cand_eleicao   ON candidatos_presidenciais(id_eleicao);
+CREATE INDEX IF NOT EXISTS idx_cand_partido   ON candidatos_presidenciais(id_partido);
+CREATE INDEX IF NOT EXISTS idx_parl_eleicao   ON resultados_parlamentares(id_eleicao);
+CREATE INDEX IF NOT EXISTS idx_parl_partido   ON resultados_parlamentares(id_partido);
+CREATE INDEX IF NOT EXISTS idx_timeline_data  ON timeline(data);
+''',
+
+    "database/seed.sql": '''-- Seed — Dados das Eleições Gerais de Angola (1992)
+
+BEGIN;
+
+INSERT OR REPLACE INTO eleicoes
+  (id_eleicao, ano, data_inicio, data_fim, tipo,
+   eleitores_inscritos, votantes, taxa_participacao)
+VALUES
+  ('1992_GERAL', 1992, '1992-09-29', '1992-09-30',
+   'Geral (Presidencial + Legislativa)',
+   4828468, 4410575, 91.34);
+
+INSERT OR REPLACE INTO partidos (id_partido, sigla, nome_completo) VALUES
+  (1,  'MPLA',    'Movimento Popular de Libertação de Angola'),
+  (2,  'UNITA',   'União Nacional para a Independência Total de Angola'),
+  (3,  'PDA',     'Partido Democrático de Angola'),
+  (4,  'FNLA',    'Frente Nacional de Libertação de Angola'),
+  (5,  'PLD',     'Partido Liberal Democrático'),
+  (6,  'PRD',     'Partido Renovador Democrático'),
+  (7,  'PSD',     'Partido Social Democrata'),
+  (8,  'FD',      'Frente Democrática'),
+  (9,  'PNDA',    'Partido Nacional Democrático Angolano'),
+  (10, 'PRA',     'Partido Reformador Angolano'),
+  (11, 'PRS',     'Partido Renovador Socialista'),
+  (12, 'AAD-COA', 'Coligação – Aliança Democrática'),
+  (13, 'PAJOCA',  'Partido da Aliança dos Jovens, Operários e Camponeses de Angola'),
+  (14, 'PDP-ANA', 'Partido Democrático Pelo Progresso / Aliança Nacional Angolana');
+
+INSERT OR REPLACE INTO candidatos_presidenciais
+  (id_candidato, id_eleicao, nome_candidato, id_partido, votos, percentagem, posicao)
+VALUES
+  (101, '1992_GERAL', 'José Eduardo dos Santos',    1,    NULL,  49.57, 1),
+  (102, '1992_GERAL', 'Jonas Savimbi',              2,    NULL,  40.07, 2),
+  (103, '1992_GERAL', 'António Alberto Neto',       3,    NULL,   2.16, 3),
+  (104, '1992_GERAL', 'Holden Roberto',             4,    NULL,   2.11, 4),
+  (105, '1992_GERAL', 'Honorato Lando',             5,    NULL,   1.92, 5),
+  (106, '1992_GERAL', 'Luís dos Passos',            6,    NULL,   1.47, 6),
+  (107, '1992_GERAL', 'Bengui Pedro João',          7,    NULL,   0.97, 7),
+  (108, '1992_GERAL', 'Simão Cacete',               8,    NULL,   0.67, 8),
+  (109, '1992_GERAL', 'Daniel Chipenda',            NULL, NULL,   0.52, 9),
+  (110, '1992_GERAL', 'Anália de Victória Pereira', 5,    11475,  0.29, 10),
+  (111, '1992_GERAL', 'Rui de Victória Pereira',    10,   NULL,   0.23, 11);
+
+INSERT OR REPLACE INTO resultados_parlamentares
+  (id_resultado, id_eleicao, id_partido, votos, percentagem, assentos)
+VALUES
+  (5001, '1992_GERAL', 1,  2124126, 53.74, 129),
+  (5002, '1992_GERAL', 2,  NULL,    34.10,  70),
+  (5003, '1992_GERAL', 4,  NULL,     2.40,   5),
+  (5004, '1992_GERAL', 5,  NULL,     2.39,   3),
+  (5005, '1992_GERAL', 11, NULL,     2.27,   6),
+  (5006, '1992_GERAL', 6,  NULL,     NULL,   1),
+  (5007, '1992_GERAL', 12, NULL,     NULL,   1),
+  (5008, '1992_GERAL', 7,  NULL,     NULL,   1),
+  (5009, '1992_GERAL', 13, NULL,     NULL,   1),
+  (5010, '1992_GERAL', 14, NULL,     NULL,   1),
+  (5011, '1992_GERAL', 9,  NULL,     NULL,   1);
+
+INSERT OR REPLACE INTO timeline (id, data, titulo, descricao) VALUES
+  (1, '1991-05-31', 'Acordos de Bicesse', 'Assinatura em Portugal entre o Governo (MPLA) e a UNITA.'),
+  (2, '1992-05-20', 'Início do Registo Eleitoral', 'Abertura do recenseamento; prolonga-se até 31 de julho.'),
+  (3, '1992-09-29', 'Eleições Gerais (1.º dia)', 'Realização das primeiras eleições multipartidárias.'),
+  (4, '1992-09-30', 'Eleições Gerais (2.º dia)', 'Continuação da votação; participação superior a 91%.'),
+  (5, '1992-10-17', 'Anúncio dos Resultados', 'A Comissão Nacional Eleitoral divulga os resultados finais.'),
+  (6, '1992-10-31', 'Colapso do Processo de Paz', 'UNITA rejeita os resultados; confrontos armados em Luanda.');
+
+COMMIT;
+''',
+
+    "database/migrate-postgres.sql": '''-- Migração SQLite → PostgreSQL
+
+CREATE TABLE IF NOT EXISTS eleicoes (
+  id_eleicao          VARCHAR(20)   PRIMARY KEY,
+  ano                 INTEGER       NOT NULL,
+  data_inicio         DATE          NOT NULL,
+  data_fim            DATE          NOT NULL,
+  tipo                VARCHAR(100)  NOT NULL,
+  eleitores_inscritos INTEGER,
+  votantes            INTEGER,
+  taxa_participacao   NUMERIC(5,2)
+);
+
+CREATE TABLE IF NOT EXISTS partidos (
+  id_partido    INTEGER      PRIMARY KEY,
+  sigla         VARCHAR(20)  NOT NULL UNIQUE,
+  nome_completo VARCHAR(200) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS candidatos_presidenciais (
+  id_candidato   INTEGER      PRIMARY KEY,
+  id_eleicao     VARCHAR(20)  NOT NULL REFERENCES eleicoes(id_eleicao),
+  nome_candidato VARCHAR(150) NOT NULL,
+  id_partido     INTEGER      REFERENCES partidos(id_partido),
+  votos          INTEGER,
+  percentagem    NUMERIC(5,2),
+  posicao        INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS resultados_parlamentares (
+  id_resultado INTEGER     PRIMARY KEY,
+  id_eleicao   VARCHAR(20) NOT NULL REFERENCES eleicoes(id_eleicao),
+  id_partido   INTEGER     NOT NULL REFERENCES partidos(id_partido),
+  votos        INTEGER,
+  percentagem  NUMERIC(5,2),
+  assentos     INTEGER     NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS timeline (
+  id        SERIAL       PRIMARY KEY,
+  data      DATE         NOT NULL,
+  titulo    VARCHAR(150) NOT NULL,
+  descricao TEXT
+);
+
+CREATE OR REPLACE VIEW vw_assentos AS
+SELECT p.sigla, p.nome_completo, r.percentagem, r.assentos,
+       ROUND(100.0 * r.assentos / NULLIF(SUM(r.assentos) OVER (), 0), 2) AS pct_assentos
+FROM resultados_parlamentares r
+JOIN partidos p ON p.id_partido = r.id_partido
+WHERE r.id_eleicao = '1992_GERAL'
+ORDER BY r.assentos DESC;
+
+CREATE OR REPLACE VIEW vw_presidenciais AS
+SELECT c.posicao, c.nome_candidato,
+       COALESCE(p.sigla, 'Ind.') AS sigla,
+       c.votos, c.percentagem
+FROM candidatos_presidenciais c
+LEFT JOIN partidos p ON p.id_partido = c.id_partido
+WHERE c.id_eleicao = '1992_GERAL'
+ORDER BY c.posicao;
+''',
+}
+
+# ======================================================================
+# Helpers de escrita
+# ======================================================================
 def escrever_ficheiro(rel: str, conteudo: str, dry_run: bool, backup: Path | None) -> str:
-    """
-    Escreve (ou atualiza) um ficheiro com o conteúdo dado.
-    Devolve: 'criado' | 'atualizado' | 'inalterado' | 'dry-criado' | 'dry-atualizado'
-    """
     destino = PROJETO_DIR / rel
     dados_novos = conteudo.encode("utf-8")
 
@@ -217,14 +889,10 @@ def escrever_ficheiro(rel: str, conteudo: str, dry_run: bool, backup: Path | Non
 
 
 def escrever_todos_ficheiros(dry_run: bool) -> dict:
-    """
-    Escreve todos os ficheiros da versão atual.
-    Devolve um dicionário com contagem por estado.
-    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = None if dry_run else (BACKUP_DIR / timestamp)
 
-    print(C.bold("\n═══ 0. ESCRITA DOS FICHEIROS DA VERSÃO ATUAL ═══"))
+    print(C.bold("\n═══ 0. ESCRITA DOS FICHEIROS (versão atual + final) ═══"))
     if dry_run:
         print(C.aviso("  [dry-run] Nenhum ficheiro será escrito."))
     else:
@@ -234,31 +902,17 @@ def escrever_todos_ficheiros(dry_run: bool) -> dict:
                 "dry-criado": 0, "dry-atualizado": 0}
     detalhes = []
 
-    # ---------- ficheiros fixos ----------
-    for rel, conteudo in FICHEIROS_VERSAO_ATUAL.items():
+    # Merge: versão atual primeiro, versão final ganha se houver colisão
+    todos = {**FICHEIROS_VERSAO_ATUAL, **FICHEIROS_VERSAO_FINAL}
+
+    for rel, conteudo in todos.items():
         estado = escrever_ficheiro(rel, conteudo, dry_run, backup)
         contagem[estado] = contagem.get(estado, 0) + 1
         detalhes.append((estado, rel))
 
-    # ---------- generate_snapshot.py ----------
-    conteudo_gen = _conteudo_generate_snapshot()
-    estado = escrever_ficheiro("scripts/generate_snapshot.py",
-                               conteudo_gen, dry_run, backup)
-    contagem[estado] = contagem.get(estado, 0) + 1
-    detalhes.append((estado, "scripts/generate_snapshot.py"))
+    # generate_snapshot.py NÃO é reescrito (mantido manualmente)
+    # update_repo.py NÃO é reescrito (este ficheiro É o update_repo)
 
-    # ---------- update_repo.py (auto-atualização) ----------
-    if SCRIPTS_DIR.joinpath("update_repo.py").exists():
-        try:
-            conteudo_self = Path(__file__).read_text(encoding="utf-8")
-            estado = escrever_ficheiro("scripts/update_repo.py",
-                                       conteudo_self, dry_run, backup)
-            contagem[estado] = contagem.get(estado, 0) + 1
-            detalhes.append((estado, "scripts/update_repo.py"))
-        except Exception:
-            pass
-
-    # ---------- relatório ----------
     print()
     for estado, rel in detalhes:
         mapa = {
@@ -280,216 +934,6 @@ def escrever_todos_ficheiros(dry_run: bool) -> dict:
         print(f"  {C.aviso('atualizaria')} : {contagem['dry-atualizado']}")
 
     return contagem
-
-
-def _conteudo_generate_snapshot() -> str:
-    """
-    Conteúdo completo e atualizado de scripts/generate_snapshot.py.
-    VERSÃO CORRIGIDA: a string do print() está numa única linha.
-    """
-    return '''#!/usr/bin/env python3
-"""
-generate_snapshot.py — Gera um snapshot completo do código da última versão.
-"""
-
-import argparse
-import hashlib
-import json
-import subprocess
-import sys
-import zipfile
-from datetime import datetime, timezone
-from pathlib import Path
-
-EXCLUSAO_PADRAO = {
-    ".git", "node_modules", "coverage", "__pycache__", ".venv", "venv",
-    ".idea", ".vscode", ".DS_Store", ".pytest_cache", ".mypy_cache",
-    "dist", "snapshots", ".backup",
-}
-EXCLUSAO_EXT = {".db", ".sqlite", ".sqlite3", ".pyc", ".pyo"}
-
-
-def cor(txt, tipo="info"):
-    m = {"ok": "\\033[92m", "aviso": "\\033[93m", "erro": "\\033[91m",
-         "info": "\\033[96m", "bold": "\\033[1m", "fim": "\\033[0m"}
-    return f"{m.get(tipo, '')}{txt}{m['fim']}"
-
-
-def run(cmd, check=True):
-    p = subprocess.run(cmd, shell=isinstance(cmd, str),
-                       capture_output=True, text=True, check=False)
-    if check and p.returncode != 0:
-        raise RuntimeError(f"Comando falhou: {cmd}\\n{p.stderr}")
-    return p.stdout.strip()
-
-
-def versao_atual():
-    try:
-        out = run(["git", "describe", "--tags", "--abbrev=0"], check=False)
-        if out:
-            return out
-    except Exception:
-        pass
-    pkg = Path("package.json")
-    if pkg.exists():
-        try:
-            return "v" + json.loads(pkg.read_text(encoding="utf-8")).get("version", "0.0.0")
-        except Exception:
-            pass
-    return "v0.0.0"
-
-
-def commit_atual():
-    try:
-        return run(["git", "rev-parse", "--short", "HEAD"], check=False) or "n/a"
-    except Exception:
-        return "n/a"
-
-
-def branch_atual():
-    try:
-        return run(["git", "rev-parse", "--abbrev-ref", "HEAD"], check=False) or "n/a"
-    except Exception:
-        return "n/a"
-
-
-def deve_excluir(caminho: Path, raiz: Path, incluir_db: bool) -> bool:
-    rel = caminho.relative_to(raiz)
-    for p in rel.parts:
-        if p in EXCLUSAO_PADRAO:
-            return True
-    if caminho.suffix.lower() in EXCLUSAO_EXT and not incluir_db:
-        return True
-    if caminho.name == "eleicoes.db" and not incluir_db:
-        return True
-    return False
-
-
-def sha256(caminho: Path) -> str:
-    h = hashlib.sha256()
-    with caminho.open("rb") as f:
-        for bloco in iter(lambda: f.read(65536), b""):
-            h.update(bloco)
-    return h.hexdigest()
-
-
-def gerar_snapshot(tag, output_dir, incluir_db):
-    raiz = Path.cwd()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    versao_limpa = tag.lstrip("v").replace("/", "-")
-    base_nome = f"angola92_{versao_limpa}_{timestamp}"
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    zip_path  = output_dir / f"{base_nome}.zip"
-    md_path   = output_dir / f"{base_nome}.md"
-    json_path = output_dir / f"{base_nome}.json"
-    sha_path  = output_dir / f"{base_nome}.sha256"
-
-    ficheiros = []
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for caminho in sorted(raiz.rglob("*")):
-            if not caminho.is_file():
-                continue
-            if deve_excluir(caminho, raiz, incluir_db):
-                continue
-            rel = caminho.relative_to(raiz)
-            zf.write(caminho, rel.as_posix())
-            ficheiros.append({
-                "caminho": rel.as_posix(),
-                "bytes":   caminho.stat().st_size,
-                "sha256":  sha256(caminho),
-            })
-
-    meta = {
-        "versao":          tag,
-        "commit":          commit_atual(),
-        "branch":          branch_atual(),
-        "gerado_em":       timestamp,
-        "total_ficheiros": len(ficheiros),
-        "total_bytes":     sum(f["bytes"] for f in ficheiros),
-        "zip_sha256":      sha256(zip_path),
-        "ficheiros":       ficheiros,
-    }
-    json_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    linhas = [
-        "# Snapshot — Eleições Angola 1992",
-        "",
-        f"- **Versão:** `{tag}`",
-        f"- **Commit:** `{meta['commit']}`",
-        f"- **Branch:** `{meta['branch']}`",
-        f"- **Gerado em:** {timestamp}",
-        f"- **Ficheiros:** {meta['total_ficheiros']}",
-        f"- **Tamanho total:** {meta['total_bytes']:,} bytes".replace(",", "."),
-        f"- **SHA-256 do ZIP:** `{meta['zip_sha256']}`",
-        "",
-        "## Ficheiros incluídos",
-        "",
-        "| # | Caminho | Bytes | SHA-256 (12 primeiros) |",
-        "|---|---------|------:|------------------------|",
-    ]
-    for i, f in enumerate(ficheiros, 1):
-        linhas.append(f"| {i} | `{f['caminho']}` | {f['bytes']} | `{f['sha256'][:12]}` |")
-    md_path.write_text("\\n".join(linhas), encoding="utf-8")
-
-    sha_path.write_text(f"{meta['zip_sha256']}  {zip_path.name}\\n", encoding="utf-8")
-
-    return {"zip": zip_path, "md": md_path, "json": json_path,
-            "sha256": sha_path, "meta": meta}
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Gera snapshot do código da última versão")
-    ap.add_argument("--tag", help="Tag/versão a usar no nome (default: última tag Git)")
-    ap.add_argument("--output", default="snapshots", help="Diretório de saída")
-    ap.add_argument("--include-db", action="store_true", help="Incluir *.db / *.sqlite")
-    args = ap.parse_args()
-
-    marcadores = [
-        Path("package.json"),
-        Path("server.js"),
-        Path("index.html"),
-        Path(".git"),
-    ]
-    if not any(p.exists() for p in marcadores):
-        # ---- MENSAGEM NUMA ÚNICA LINHA (corrige SyntaxError) ----
-        print(cor("✖ Execute na raiz do projeto (esperado package.json, server.js, index.html ou .git/).", "erro"))
-        sys.exit(1)
-
-    tag = args.tag or versao_atual()
-    output = Path(args.output).resolve()
-
-    print(cor("\\n╔══════════════════════════════════════════════╗", "bold"))
-    print(cor("║   SNAPSHOT DO CÓDIGO — ÚLTIMA VERSÃO        ║", "bold"))
-    print(cor("╚══════════════════════════════════════════════╝", "bold"))
-    print(f"  Versão : {cor(tag, 'ok')}")
-    print(f"  Commit : {commit_atual()}")
-    print(f"  Branch : {branch_atual()}")
-    print(f"  Output : {output}")
-
-    try:
-        r = gerar_snapshot(tag, output, args.include_db)
-    except Exception as e:
-        print(cor(f"\\n✖ Erro: {e}", "erro"))
-        sys.exit(1)
-
-    m = r["meta"]
-    print(cor("\\n✅ Snapshot gerado.", "ok"))
-    print(f"   ZIP            : {r['zip']}")
-    print(f"   Manifesto MD   : {r['md']}")
-    print(f"   Metadados JSON : {r['json']}")
-    print(f"   SHA-256        : {r['sha256']}")
-    print(f"   Ficheiros      : {m['total_ficheiros']}  |  "
-          f"Tamanho: {m['total_bytes']:,} bytes".replace(",", "."))
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(cor("\\n\\n⏹ Interrompido.", "aviso"))
-        sys.exit(130)
-'''
 
 
 # ======================================================================
@@ -560,8 +1004,7 @@ def validar_gitignore():
 def validar_gitattributes():
     if not GITATTRIBUTES.exists():
         return True, "não existe (opcional)"
-    linhas = GITATTRIBUTES.read_text(encoding="utf-8", errors="replace").splitlines()
-    for i, linha in enumerate(linhas, 1):
+    for i, linha in enumerate(GITATTRIBUTES.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
         s = linha.strip()
         if not s or s.startswith("#"):
             continue
@@ -571,17 +1014,11 @@ def validar_gitattributes():
 
 
 def validar_scripts(dry_run: bool = False):
-    """
-    Valida a sintaxe dos scripts Python.
-    Em dry-run, os scripts podem ainda estar no estado antigo (com erros),
-    por isso reporta mas não falha o ciclo.
-    """
     problemas = []
     for f in SCRIPTS_DIR.glob("*.py"):
         try:
             run_cmd([sys.executable, "-m", "py_compile", str(f)], check=True)
         except Exception as e:
-            # Em dry-run, só avisa (não conta como falha)
             problemas.append(f"{f.name}: {e}")
     if not problemas:
         return True, "OK"
@@ -591,11 +1028,10 @@ def validar_scripts(dry_run: bool = False):
 
 
 def validar_geral(dry_run: bool = False):
-    """Valida tudo de uma vez."""
     ok1, m1 = validar_gitignore()
     ok2, m2 = validar_gitattributes()
     ok3, m3 = validar_scripts(dry_run=dry_run)
-    return ok1 and ok2 and ok3, (ok1, m1, ok2, m2, ok3, m3)
+    return (ok1 and ok2 and ok3), (ok1, m1, ok2, m2, ok3, m3)
 
 
 # ======================================================================
@@ -622,7 +1058,6 @@ def passo_validacoes(dry_run: bool = False):
     ok, (ok1, m1, ok2, m2, ok3, m3) = validar_geral(dry_run=dry_run)
     print(f"  {C.ok('✔') if ok1 else C.erro('✖')} .gitignore     → {m1}")
     print(f"  {C.ok('✔') if ok2 else C.erro('✖')} .gitattributes → {m2}")
-    # Em dry-run, scripts podem estar em estado antigo — apresentar como aviso
     if dry_run and not ok3:
         print(f"  {C.aviso('⚠')} scripts/*.py   → {m3}")
     else:
@@ -698,7 +1133,7 @@ def passo_commit(ficheiros):
         msg = f"{msg}\n\n{corpo}"
     out, err, code = git("commit", "-m", msg, check=False)
     if code != 0:
-        print(C.erro(f"  ✖ Falha: {err}"))
+        print(C.erro(f"  ✖ Falha: {err[:300]}"))
         return None
     print(C.ok("  ✔ Commit criado."))
     return msg.splitlines()[0]
@@ -766,24 +1201,14 @@ def modo_auto(msg, no_snapshot=False, no_push=False, no_tag=False, no_files=Fals
 
 
 # ======================================================================
-# Modo --fix-now (escreve + valida + commita numa só passagem)
+# Modo --fix-now
 # ======================================================================
 def modo_fix_now(msg, no_snapshot=False, no_push=False, no_tag=False):
-    """
-    Atalho que resolve o cenário atual:
-      1. Escreve todos os ficheiros (substitui os quebrados).
-      2. Valida tudo.
-      3. Gera snapshot.
-      4. Commit + push + tag.
-    """
     print(C.bold("\n=== MODO FIX-NOW ===\n"))
-
-    # 1) Escrever ficheiros
     contagem = escrever_todos_ficheiros(dry_run=False)
     if contagem["criado"] + contagem["atualizado"] == 0:
         print(C.info("\n· Nenhum ficheiro precisou de ser escrito."))
 
-    # 2) Validar (agora sim, os scripts já estão corretos)
     print(C.bold("\n═══ VALIDAÇÃO PÓS-ESCRITA ═══"))
     ok, (ok1, m1, ok2, m2, ok3, m3) = validar_geral(dry_run=False)
     print(f"  {C.ok('✔') if ok1 else C.erro('✖')} .gitignore     → {m1}")
@@ -791,19 +1216,17 @@ def modo_fix_now(msg, no_snapshot=False, no_push=False, no_tag=False):
     print(f"  {C.ok('✔') if ok3 else C.erro('✖')} scripts/*.py   → {m3}")
 
     if not ok:
-        print(C.erro("\n✖ Validação falhou. Corrija os erros acima e tente de novo."))
+        print(C.erro("\n✖ Validação falhou."))
         return 1
 
-    # 3) Snapshot
     if not no_snapshot:
         passo_snapshot()
 
-    # 4) Commit + push + tag
     git("add", "-A")
     out, err, code = git("commit", "-m", msg, check=False)
     if code != 0:
         if "nothing to commit" in out or "nothing to commit" in err:
-            print(C.aviso("⚠ Nada a commitar (ficheiros já estavam sincronizados)."))
+            print(C.aviso("⚠ Nada a commitar."))
             return 0
         print(C.erro(f"✖ Falha no commit: {err[:300]}"))
         return 1
@@ -829,53 +1252,47 @@ def modo_fix_now(msg, no_snapshot=False, no_push=False, no_tag=False):
 # Main
 # ======================================================================
 def main():
-    ap = argparse.ArgumentParser(description="Gestão completa do repositório + ficheiros")
+    ap = argparse.ArgumentParser(description="Gestão completa do repositório + versão final")
     ap.add_argument("--auto", metavar="MSG", help="Commit automático")
-    ap.add_argument("--fix-now", metavar="MSG", help="Escreve + valida + commita numa só passagem")
-    ap.add_argument("--dry-run", action="store_true", help="Só mostrar (não escreve nem commita)")
+    ap.add_argument("--fix-now", metavar="MSG", help="Escreve + valida + commita")
+    ap.add_argument("--dry-run", action="store_true", help="Só mostrar")
     ap.add_argument("--files-only", action="store_true", help="Só escrever ficheiros")
-    ap.add_argument("--no-files", action="store_true", help="Saltar escrita de ficheiros")
+    ap.add_argument("--no-files", action="store_true", help="Saltar escrita")
     ap.add_argument("--no-snapshot", action="store_true", help="Sem snapshot")
     ap.add_argument("--no-push", action="store_true", help="Sem push")
     ap.add_argument("--no-tag", action="store_true", help="Sem tag")
     args = ap.parse_args()
 
     print(C.bold("\n╔══════════════════════════════════════════════╗"))
-    print(C.bold("║   UPDATE REPO — GESTÃO + FICHEIROS          ║"))
+    print(C.bold("║   UPDATE REPO — VERSÃO FINAL (sem regeneração) ║"))
     print(C.bold("╚══════════════════════════════════════════════╝"))
 
-    # ---------- modo --files-only ----------
     if args.files_only:
         contagem = escrever_todos_ficheiros(dry_run=False)
         if contagem["criado"] + contagem["atualizado"] > 0:
-            print(C.ok("\n✅ Ficheiros escritos. Use 'git add -A && git commit' para versionar."))
+            print(C.ok("\n✅ Ficheiros escritos."))
         else:
             print(C.info("\n· Nenhum ficheiro precisou de ser escrito."))
         return 0
 
-    # ---------- modo --fix-now ----------
     if args.fix_now:
         if not e_repo_git():
             print(C.erro("✖ Não está dentro de um repositório Git."))
             sys.exit(1)
         sys.exit(modo_fix_now(args.fix_now, args.no_snapshot, args.no_push, args.no_tag))
 
-    # ---------- exigir repositório Git (a partir daqui) ----------
     if not e_repo_git():
         print(C.erro("✖ Não está dentro de um repositório Git."))
         sys.exit(1)
 
-    # ---------- 0. escrita de ficheiros ----------
     if not args.no_files:
         escrever_todos_ficheiros(dry_run=args.dry_run)
 
-    # ---------- 1–2. estado + validações ----------
     alteracoes = passo_estado()
     valido = passo_validacoes(dry_run=args.dry_run)
 
     if args.dry_run:
         print(C.aviso("\n[dry-run] Nenhuma alteração efetuada."))
-        # Em dry-run, os erros de scripts não contam como falha (podem ser antigos)
         sys.exit(0)
 
     if not valido:
@@ -886,12 +1303,10 @@ def main():
         print(C.ok("\n✔ Nada a fazer. Repositório limpo."))
         sys.exit(0)
 
-    # ---------- modo automático ----------
     if args.auto:
         sys.exit(modo_auto(args.auto, args.no_snapshot, args.no_push,
                            args.no_tag, no_files=True))
 
-    # ---------- modo interativo ----------
     if not args.no_snapshot:
         passo_snapshot()
     selecionados = passo_selecao(alteracoes)
