@@ -22,7 +22,11 @@ app.use(helmet({
       scriptSrc: ["'self'", "https://code.jquery.com", "https://cdn.datatables.net", "https://cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.datatables.net"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https://cdn.datatables.net",       // ← DataTables i18n
+        "https://cdn.jsdelivr.net"          // ← Chart.js sourcemap (opcional)
+      ],
       fontSrc: ["'self'", "https://cdn.datatables.net"],
       objectSrc: ["'none'"],
       frameAncestors: ["'self'"],

@@ -86,6 +86,8 @@ async function carregarDados() {
     renderTabelaParlamentares();
     initDataTables();
     initFiltrosPresidenciais();
+    setTimeout(corrigirInputsSemId, 200);
+
     renderGraficos();
   } catch (err) {
     console.error(err);
@@ -278,6 +280,23 @@ function renderGraficos() {
       }
     }
   });
+}
+
+
+function corrigirInputsSemId() {
+    let contador = 0;
+    document.querySelectorAll('input, select, textarea').forEach(el => {
+        if (!el.id && !el.name) {
+            const tipo = el.type || el.tagName.toLowerCase();
+            el.id = `auto-${tipo}-${contador}`;
+            el.name = `auto-${tipo}-${contador}`;
+            el.setAttribute('aria-label', `Campo ${tipo}`);
+            contador++;
+        }
+    });
+    if (contador > 0) {
+        console.log(`[acessibilidade] ${contador} input(s) corrigido(s) com id/name`);
+    }
 }
 
 /* ============================================================

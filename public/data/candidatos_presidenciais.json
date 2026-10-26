@@ -1,0 +1,90 @@
+[
+  {
+    "id_candidato": 101,
+    "nome_candidato": "José Eduardo dos Santos",
+    "id_partido": 1,
+    "votos": null,
+    "percentagem": 49.57,
+    "posicao": 1
+  },
+  {
+    "id_candidato": 102,
+    "nome_candidato": "Jonas Savimbi",
+    "id_partido": 2,
+    "votos": null,
+    "percentagem": 40.07,
+    "posicao": 2
+  },
+  {
+    "id_candidato": 103,
+    "nome_candidato": "António Alberto Neto",
+    "id_partido": 3,
+    "votos": null,
+    "percentagem": 2.16,
+    "posicao": 3
+  },
+  {
+    "id_candidato": 104,
+    "nome_candidato": "Holden Roberto",
+    "id_partido": 4,
+    "votos": null,
+    "percentagem": 2.11,
+    "posicao": 4
+  },
+  {
+    "id_candidato": 105,
+    "nome_candidato": "Honorato Lando",
+    "id_partido": 5,
+    "votos": null,
+    "percentagem": 1.92,
+    "posicao": 5
+  },
+  {
+    "id_candidato": 106,
+    "nome_candidato": "Luís dos Passos",
+    "id_partido": 6,
+    "votos": null,
+    "percentagem": 1.47,
+    "posicao": 6
+  },
+  {
+    "id_candidato": 107,
+    "nome_candidato": "Bengui Pedro João",
+    "id_partido": 7,
+    "votos": null,
+    "percentagem": 0.97,
+    "posicao": 7
+  },
+  {
+    "id_candidato": 108,
+    "nome_candidato": "Simão Cacete",
+    "id_partido": 8,
+    "votos": null,
+    "percentagem": 0.67,
+    "posicao": 8
+  },
+  {
+    "id_candidato": 109,
+    "nome_candidato": "Daniel Chipenda",
+    "id_partido": null,
+    "votos": null,
+    "percentagem": 0.52,
+    "posicao": 9
+  },
+  {
+    "id_candidato": 110,
+    "nome_candidato": "Anália de Victória Pereira",
+    "id_partido": 5,
+    "votos": 11475,
+    "percentagem": 0.29,
+    "posicao": 10
+  },
+  {
+    "id_candidato": 111,
+    "nome_candidato": "Rui de Victória Pereira",
+    "id_partido": 10,
+    "votos": null,
+    "percentagem": 0.23,
+    "posicao": 11
+  }
+]
