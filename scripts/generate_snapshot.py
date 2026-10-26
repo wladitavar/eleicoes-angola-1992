@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """
-generate_snapshot.py — Gera um snapshot completo do código da última versão.
+generate_snapshot.py — Gera um snapshot completo do codigo da ultima versao.
+
+Produz:
+  - snapshots/angola92_<versao>_<timestamp>.zip
+  - snapshots/angola92_<versao>_<timestamp>.md
+  - snapshots/angola92_<versao>_<timestamp>.json
+  - snapshots/angola92_<versao>_<timestamp>.sha256
+
+Exclui por omissao: .git, node_modules, coverage, *.db, __pycache__, .venv,
+dist/, snapshots/, .backup/
+
+Uso:
+  python scripts/generate_snapshot.py
+  python scripts/generate_snapshot.py --tag v1.0.0 --output ./dist
+  python scripts/generate_snapshot.py --include-db
 """
 
 import argparse
@@ -12,6 +26,9 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# ======================================================================
+# Exclusoes por omissao
+# ======================================================================
 EXCLUSAO_PADRAO = {
     ".git", "node_modules", "coverage", "__pycache__", ".venv", "venv",
     ".idea", ".vscode", ".DS_Store", ".pytest_cache", ".mypy_cache",
@@ -20,21 +37,36 @@ EXCLUSAO_PADRAO = {
 EXCLUSAO_EXT = {".db", ".sqlite", ".sqlite3", ".pyc", ".pyo"}
 
 
+# ======================================================================
+# Cores (ASCII-friendly, nunca quebra)
+# ======================================================================
 def cor(txt, tipo="info"):
-    m = {"ok": "\033[92m", "aviso": "\033[93m", "erro": "\033[91m",
-         "info": "\033[96m", "bold": "\033[1m", "fim": "\033[0m"}
+    m = {
+        "ok": "\033[92m",
+        "aviso": "\033[93m",
+        "erro": "\033[91m",
+        "info": "\033[96m",
+        "bold": "\033[1m",
+        "fim": "\033[0m",
+    }
     return f"{m.get(tipo, '')}{txt}{m['fim']}"
 
 
+# ======================================================================
+# Helpers Git
+# ======================================================================
 def run(cmd, check=True):
-    p = subprocess.run(cmd, shell=isinstance(cmd, str),
-                       capture_output=True, text=True, check=False)
+    p = subprocess.run(
+        cmd, shell=isinstance(cmd, str),
+        capture_output=True, text=True, check=False
+    )
     if check and p.returncode != 0:
         raise RuntimeError(f"Comando falhou: {cmd}\n{p.stderr}")
     return p.stdout.strip()
 
 
 def versao_atual():
+    """Tenta obter a ultima tag Git; fallback: versao do package.json."""
     try:
         out = run(["git", "describe", "--tags", "--abbrev=0"], check=False)
         if out:
@@ -64,6 +96,9 @@ def branch_atual():
         return "n/a"
 
 
+# ======================================================================
+# Filtro de ficheiros
+# ======================================================================
 def deve_excluir(caminho: Path, raiz: Path, incluir_db: bool) -> bool:
     rel = caminho.relative_to(raiz)
     for p in rel.parts:
@@ -84,6 +119,9 @@ def sha256(caminho: Path) -> str:
     return h.hexdigest()
 
 
+# ======================================================================
+# Snapshot
+# ======================================================================
 def gerar_snapshot(tag, output_dir, incluir_db):
     raiz = Path.cwd()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -121,12 +159,16 @@ def gerar_snapshot(tag, output_dir, incluir_db):
         "zip_sha256":      sha256(zip_path),
         "ficheiros":       ficheiros,
     }
-    json_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False),
+        encoding="utf-8"
+    )
 
+    # Manifesto Markdown
     linhas = [
-        "# Snapshot — Eleições Angola 1992",
+        "# Snapshot - Eleicoes Angola 1992",
         "",
-        f"- **Versão:** `{tag}`",
+        f"- **Versao:** `{tag}`",
         f"- **Commit:** `{meta['commit']}`",
         f"- **Branch:** `{meta['branch']}`",
         f"- **Gerado em:** {timestamp}",
@@ -134,46 +176,63 @@ def gerar_snapshot(tag, output_dir, incluir_db):
         f"- **Tamanho total:** {meta['total_bytes']:,} bytes".replace(",", "."),
         f"- **SHA-256 do ZIP:** `{meta['zip_sha256']}`",
         "",
-        "## Ficheiros incluídos",
+        "## Ficheiros incluidos",
         "",
         "| # | Caminho | Bytes | SHA-256 (12 primeiros) |",
         "|---|---------|------:|------------------------|",
     ]
     for i, f in enumerate(ficheiros, 1):
-        linhas.append(f"| {i} | `{f['caminho']}` | {f['bytes']} | `{f['sha256'][:12]}` |")
+        linhas.append(
+            f"| {i} | `{f['caminho']}` | {f['bytes']} | `{f['sha256'][:12]}` |"
+        )
     md_path.write_text("\n".join(linhas), encoding="utf-8")
 
-    sha_path.write_text(f"{meta['zip_sha256']}  {zip_path.name}\n", encoding="utf-8")
+    # Checksum do ZIP
+    sha_path.write_text(
+        f"{meta['zip_sha256']}  {zip_path.name}\n",
+        encoding="utf-8"
+    )
 
-    return {"zip": zip_path, "md": md_path, "json": json_path,
-            "sha256": sha_path, "meta": meta}
+    return {
+        "zip": zip_path,
+        "md": md_path,
+        "json": json_path,
+        "sha256": sha_path,
+        "meta": meta,
+    }
 
 
+# ======================================================================
+# Main
+# ======================================================================
 def main():
-    ap = argparse.ArgumentParser(description="Gera snapshot do código da última versão")
-    ap.add_argument("--tag", help="Tag/versão a usar no nome (default: última tag Git)")
-    ap.add_argument("--output", default="snapshots", help="Diretório de saída")
+    ap = argparse.ArgumentParser(
+        description="Gera snapshot do codigo da ultima versao"
+    )
+    ap.add_argument("--tag", help="Tag/versao a usar no nome (default: ultima tag Git)")
+    ap.add_argument("--output", default="snapshots", help="Diretorio de saida")
     ap.add_argument("--include-db", action="store_true", help="Incluir *.db / *.sqlite")
     args = ap.parse_args()
 
+    # Verificacao de raiz do projeto (aceita frontend estatico ou API Node)
     marcadores = [
         Path("package.json"),
         Path("server.js"),
-        Path("index.html"),
+        Path("public/index.html"),
+        Path("public/app.js"),
         Path(".git"),
     ]
     if not any(p.exists() for p in marcadores):
-        # ---- MENSAGEM NUMA ÚNICA LINHA (corrige SyntaxError) ----
-        print(cor("✖ Execute na raiz do projeto (esperado package.json, server.js, index.html ou .git/).", "erro"))
+        print(cor("ERRO: execute na raiz do projeto.", "erro"))
         sys.exit(1)
 
     tag = args.tag or versao_atual()
     output = Path(args.output).resolve()
 
-    print(cor("\n╔══════════════════════════════════════════════╗", "bold"))
-    print(cor("║   SNAPSHOT DO CÓDIGO — ÚLTIMA VERSÃO        ║", "bold"))
-    print(cor("╚══════════════════════════════════════════════╝", "bold"))
-    print(f"  Versão : {cor(tag, 'ok')}")
+    print(cor("\n+----------------------------------------------+", "bold"))
+    print(cor("|   SNAPSHOT DO CODIGO - ULTIMA VERSAO        |", "bold"))
+    print(cor("+----------------------------------------------+", "bold"))
+    print(f"  Versao : {cor(tag, 'ok')}")
     print(f"  Commit : {commit_atual()}")
     print(f"  Branch : {branch_atual()}")
     print(f"  Output : {output}")
@@ -181,11 +240,11 @@ def main():
     try:
         r = gerar_snapshot(tag, output, args.include_db)
     except Exception as e:
-        print(cor(f"\n✖ Erro: {e}", "erro"))
+        print(cor(f"\nERRO: {e}", "erro"))
         sys.exit(1)
 
     m = r["meta"]
-    print(cor("\n✅ Snapshot gerado.", "ok"))
+    print(cor("\nOK - Snapshot gerado.", "ok"))
     print(f"   ZIP            : {r['zip']}")
     print(f"   Manifesto MD   : {r['md']}")
     print(f"   Metadados JSON : {r['json']}")
@@ -198,5 +257,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(cor("\n\n⏹ Interrompido.", "aviso"))
+        print(cor("\n\nInterrompido.", "aviso"))
         sys.exit(130)
