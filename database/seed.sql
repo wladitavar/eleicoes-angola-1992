@@ -49,7 +49,7 @@ VALUES
   (5003, '1992_GERAL', 4,  NULL,     2.40,   5),
   (5004, '1992_GERAL', 5,  NULL,     2.39,   3),
   (5005, '1992_GERAL', 11, NULL,     2.27,   6),
-  (5006, '1992_GERAL', 6,  NULL,     NULL,   1),
+  (5006, '1992_GERAL', 6,  NULL,     NULL,   2),
   (5007, '1992_GERAL', 12, NULL,     NULL,   1),
   (5008, '1992_GERAL', 7,  NULL,     NULL,   1),
   (5009, '1992_GERAL', 13, NULL,     NULL,   1),
