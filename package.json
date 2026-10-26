@@ -1,0 +1,7 @@
+{
+  "name": "eleicoes-angola-1992",
+  "version": "0.1.0",
+  "description": "Frontend estático — versão inicial das eleições de Angola de 1992",
+  "private": true,
+  "license": "MIT"
+}
