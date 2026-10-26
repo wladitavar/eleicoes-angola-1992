@@ -22,6 +22,10 @@ dist/
 snapshots/
 .backup/
 
+# Scripts temporÃ¡rios
+scripts/fix*.ps1
+scripts/fix*.sh
+
 # Sistema
 .DS_Store
 Thumbs.db
@@ -42,7 +46,3 @@ __pycache__/
 *.pyo
 .venv/
 venv/
-
-# Scripts temporários de correção
-scripts/fix*.ps1
-scripts/fix*.sh
