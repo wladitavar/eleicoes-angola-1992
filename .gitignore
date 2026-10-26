@@ -42,3 +42,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+
+# Scripts temporários de correção
+scripts/fix*.ps1
+scripts/fix*.sh
